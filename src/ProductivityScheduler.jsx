@@ -166,7 +166,8 @@ export default function ProductivityScheduler({ clientId }) {
       difficulty,
       memoryStrength,
       dates: schedule.map(d => formatDate(d)),
-      completed: completedMap
+      completed: completedMap,
+      googleEventIds: {}
     };
     setSavedSchedules(prev => [...prev, newSchedule]);
     setSchedule([]);
@@ -200,7 +201,33 @@ export default function ProductivityScheduler({ clientId }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  function handleDeleteSchedule(scheduleId) {
+  async function handleDeleteSchedule(scheduleId) {
+    const schedule = savedSchedules.find(s => s.id === scheduleId);
+    if (!schedule) return;
+
+    // First, attempt to unsync (delete calendar events) if there are any
+    const eventIds = schedule.googleEventIds || {};
+    const eventIdsList = Object.values(eventIds).filter(id => id);
+
+    if (eventIdsList.length > 0 && googleAccessToken) {
+      try {
+        for (const eventId of eventIdsList) {
+          try {
+            await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${googleAccessToken}` }
+            });
+            // 404 = already deleted, 204 = success; both are OK
+          } catch (e) {
+            console.warn('Failed to delete event', eventId, e);
+          }
+        }
+      } catch (err) {
+        console.warn('Unsync during delete failed (non-blocking):', err);
+      }
+    }
+
+    // Then remove the schedule from the frontend
     setSavedSchedules(prev => prev.filter(s => s.id !== scheduleId));
   }
 
@@ -284,22 +311,25 @@ export default function ProductivityScheduler({ clientId }) {
     setSyncingScheduleId(schedule.id);
     try {
       const calendarTitle = `${schedule.subject} - ${schedule.topic}`;
-      const events = schedule.dates.map((dateStr) => {
+      const existingEventIds = schedule.googleEventIds || {};
+      let syncedCount = 0;
+
+      for (const dateStr of schedule.dates) {
+        // Skip if already synced for this date
+        if (existingEventIds[dateStr]) {
+          syncedCount++;
+          continue;
+        }
+
         const isoDate = dateStringToISO(dateStr);
-        return {
+        const event = {
           summary: `📖 Revise: ${calendarTitle}`,
           description: `Review ${schedule.topic} for ${schedule.subject} exam (Difficulty: ${schedule.difficulty})`,
-          start: {
-            date: isoDate
-          },
-          end: {
-            date: isoDate
-          },
+          start: { date: isoDate },
+          end: { date: isoDate },
           colorId: '1'
         };
-      });
 
-      for (const event of events) {
         const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
           method: 'POST',
           headers: {
@@ -323,13 +353,75 @@ export default function ProductivityScheduler({ clientId }) {
           const errorData = await response.json();
           throw new Error(`Failed to create calendar event: ${errorData.error?.message || response.statusText}`);
         }
+
+        const created = await response.json();
+        const eventId = created.id;
+        syncedCount++;
+
+        // Persist the event ID mapping
+        setSavedSchedules(prev =>
+          prev.map(s => {
+            if (s.id !== schedule.id) return s;
+            const newEventIds = { ...(s.googleEventIds || {}) };
+            newEventIds[dateStr] = eventId;
+            return { ...s, googleEventIds: newEventIds };
+          })
+        );
       }
 
       setSyncingScheduleId(null);
-      setInfo(`✓ Synced ${events.length} revision dates to Google Calendar!`);
+      const totalCount = schedule.dates.length;
+      setInfo(`✓ Synced ${syncedCount}/${totalCount} dates to Google Calendar!`);
     } catch (err) {
       console.error('Sync failed:', err);
       setInfo(`Failed to sync: ${err.message}`);
+      setSyncingScheduleId(null);
+    }
+  };
+
+  const handleUnsyncSchedule = async (schedule) => {
+    const eventIds = schedule.googleEventIds || {};
+    const eventIdsList = Object.values(eventIds).filter(id => id);
+
+    if (eventIdsList.length === 0) {
+      setInfo('No calendar events to remove.');
+      return;
+    }
+
+    setSyncingScheduleId(schedule.id);
+    try {
+      for (const eventId of eventIdsList) {
+        try {
+          const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${eventId}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${googleAccessToken}` }
+          });
+          if (response.status === 401) {
+            localStorage.removeItem('googleAccessToken');
+            localStorage.removeItem('googleAccessTokenExpiry');
+            setGoogleAccessToken(null);
+            setGoogleAccessTokenExpiry(null);
+            setInfo('Google session expired — please sign in again.');
+            signInWithGoogle();
+            setSyncingScheduleId(null);
+            return;
+          }
+          // 404 = already deleted, 204 = success; both are OK
+        } catch (e) {
+          console.warn('Failed to delete event', eventId, e);
+        }
+      }
+      // Clear the googleEventIds mapping
+      setSavedSchedules(prev =>
+        prev.map(s =>
+          s.id === schedule.id ? { ...s, googleEventIds: {} } : s
+        )
+      );
+      setSyncingScheduleId(null);
+      setInfo(`✓ Removed ${eventIdsList.length} events from Google Calendar.`);
+    } catch (err) {
+      console.error('Unsync failed:', err);
+      setInfo(`Failed to unsync: ${err.message}`);
       setSyncingScheduleId(null);
     }
   };
@@ -667,7 +759,7 @@ export default function ProductivityScheduler({ clientId }) {
                             Exam: {schedule.examDate} | Difficulty: {schedule.difficulty}
                           </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -704,8 +796,32 @@ export default function ProductivityScheduler({ clientId }) {
                               opacity: syncingScheduleId === schedule.id ? 0.7 : 1
                             }}
                           >
-                            {syncingScheduleId === schedule.id ? 'Syncing...' : 'Sync Cal'}
+                            {syncingScheduleId === schedule.id ? 'Syncing...' : `Sync (${Object.keys(schedule.googleEventIds || {}).length}/${schedule.dates.length})`}
                           </button>
+                          {Object.keys(schedule.googleEventIds || {}).length > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (confirm(`Remove ${Object.keys(schedule.googleEventIds || {}).length} events from Google Calendar?`)) {
+                                  handleUnsyncSchedule(schedule);
+                                }
+                              }}
+                              disabled={syncingScheduleId === schedule.id}
+                              style={{
+                                padding: '0.35rem 0.75rem',
+                                backgroundColor: '#6c757d',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '3px',
+                                cursor: syncingScheduleId === schedule.id ? 'wait' : 'pointer',
+                                fontSize: '0.9rem',
+                                fontWeight: 'bold',
+                                opacity: syncingScheduleId === schedule.id ? 0.7 : 1
+                              }}
+                            >
+                              Unsync
+                            </button>
+                          )}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
