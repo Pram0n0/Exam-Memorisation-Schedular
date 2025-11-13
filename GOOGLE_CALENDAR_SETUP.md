@@ -119,3 +119,23 @@ npm run dev
 3. Need to add new revision dates? Modify the schedule and re-sync
 
 This ensures your app data and Google Calendar stay in sync. Do not manually edit or delete events in Google Calendar once they've been synced by the app.
+
+## Future Enhancement: Two-Way Synchronization
+
+**Note for future development**: Two-way sync (calendar changes reflected in the app) is currently not implemented but can be added in later versions. Two approaches are available:
+
+### Option 1: Polling (Medium Effort)
+- Periodically fetch events from Google Calendar (every 30-60 seconds)
+- Compare fetched events with local `googleEventIds` mapping
+- Detect deletions/edits and sync back to app state
+- **Pros**: No backend required, works with current OAuth setup
+- **Cons**: Inefficient (constant API calls), 30-60 second latency
+
+### Option 2: Webhooks (High Effort)
+- Use Google Calendar webhooks via Cloud Pub/Sub
+- Requires a backend server (Node.js, etc.) to receive notifications
+- Real-time synchronization via WebSocket to frontend
+- **Pros**: Real-time, efficient
+- **Cons**: Complex architecture, requires hosting a backend server
+
+Both approaches will require conflict resolution logic to handle edge cases (simultaneous edits, deletions, exam date shifts, etc.). Consider implementing this feature when the app reaches a more mature state.
