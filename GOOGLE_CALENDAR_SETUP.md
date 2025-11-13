@@ -44,12 +44,15 @@ Follow these steps to enable Google Calendar sync in your Productivity Scheduler
 
 ## Step 4: Add Your Client ID to the App
 
-1. Open `src/App.jsx`
-2. Replace `YOUR_GOOGLE_CLIENT_ID_HERE` with your actual Client ID:
-   ```jsx
-   const GOOGLE_CLIENT_ID = 'your-client-id-here.apps.googleusercontent.com'
+1. Create a `.env` file in the project root (copy from `.env.example`) and set your Client ID:
+
+   ```text
+   VITE_GOOGLE_CLIENT_ID=your-client-id-here.apps.googleusercontent.com
    ```
-3. Save the file
+
+2. `Vite` exposes env variables prefixed with `VITE_` via `import.meta.env` in the app. `src/App.jsx` already reads `import.meta.env.VITE_GOOGLE_CLIENT_ID`, so no further code edits are required.
+
+3. Save the `.env` file
 
 ## Step 5: Restart the Dev Server
 

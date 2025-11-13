@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import ProductivityScheduler from './ProductivityScheduler'
 
 function App() {
-  const GOOGLE_CLIENT_ID = '162785689255-un38b6kp1k90jjpe36j2ssaad66vemho.apps.googleusercontent.com'
+  const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '162785689255-un38b6kp1k90jjpe36j2ssaad66vemho.apps.googleusercontent.com'
 
   useEffect(() => {
     // Load Google API script
