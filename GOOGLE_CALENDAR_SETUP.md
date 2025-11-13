@@ -87,6 +87,11 @@ npm run dev
 - Try clearing localStorage: Open browser DevTools → Application → Local Storage → Clear all
 - Try signing in again
 
+**"Invalid authentication credentials" / expired token:**
+- The implicit OAuth access token expires (usually in 1 hour). If syncing worked earlier but fails now, your stored token likely expired.
+- Solution: Sign in again using the app's "Sync Cal" button. The app stores the token expiry and will prompt re-auth when needed.
+- If you want to force re-auth, clear `localStorage` (see above) and click "Sync Cal".
+
 **Revision events not appearing:**
 - Check your Google Calendar's primary calendar is visible
 - The events are created as all-day events (no specific time)

@@ -87,6 +87,10 @@ export default function ProductivityScheduler({ clientId }) {
   const [completedMap, setCompletedMap] = useState({});
   const [editingScheduleId, setEditingScheduleId] = useState(null);
   const [googleAccessToken, setGoogleAccessToken] = useState(() => localStorage.getItem('googleAccessToken') || null);
+  const [googleAccessTokenExpiry, setGoogleAccessTokenExpiry] = useState(() => {
+    const v = localStorage.getItem('googleAccessTokenExpiry');
+    return v ? Number(v) : null;
+  });
   const [syncingScheduleId, setSyncingScheduleId] = useState(null);
 
   useEffect(() => {
@@ -235,9 +239,15 @@ export default function ProductivityScheduler({ clientId }) {
     if (hash.includes('access_token')) {
       const params = new URLSearchParams(hash.substring(1));
       const accessToken = params.get('access_token');
+      const expiresIn = params.get('expires_in');
       if (accessToken) {
         setGoogleAccessToken(accessToken);
         localStorage.setItem('googleAccessToken', accessToken);
+        if (expiresIn) {
+          const expiryTs = Date.now() + Number(expiresIn) * 1000;
+          setGoogleAccessTokenExpiry(expiryTs);
+          localStorage.setItem('googleAccessTokenExpiry', String(expiryTs));
+        }
         setInfo('✓ Connected to Google Calendar');
         // Clean up URL
         window.history.replaceState({}, document.title, window.location.pathname);
@@ -260,7 +270,13 @@ export default function ProductivityScheduler({ clientId }) {
   };
 
   const _syncScheduleToGoogleCalendar = async (schedule) => {
-    if (!googleAccessToken) {
+    // If we don't have a token or it's expired, re-authenticate.
+    if (!googleAccessToken || (googleAccessTokenExpiry && Date.now() > googleAccessTokenExpiry)) {
+      // clear stale tokens
+      localStorage.removeItem('googleAccessToken');
+      localStorage.removeItem('googleAccessTokenExpiry');
+      setGoogleAccessToken(null);
+      setGoogleAccessTokenExpiry(null);
       signInWithGoogle();
       return;
     }
@@ -294,6 +310,16 @@ export default function ProductivityScheduler({ clientId }) {
         });
 
         if (!response.ok) {
+          // If token is invalid/expired, prompt re-auth
+          if (response.status === 401) {
+            localStorage.removeItem('googleAccessToken');
+            localStorage.removeItem('googleAccessTokenExpiry');
+            setGoogleAccessToken(null);
+            setGoogleAccessTokenExpiry(null);
+            setInfo('Google session expired — please sign in again.');
+            signInWithGoogle();
+            return;
+          }
           const errorData = await response.json();
           throw new Error(`Failed to create calendar event: ${errorData.error?.message || response.statusText}`);
         }
