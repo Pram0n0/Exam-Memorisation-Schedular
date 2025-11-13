@@ -102,4 +102,20 @@ npm run dev
 - The access token is stored in `localStorage` so you won't need to re-authenticate on every sync
 - Clear your browser's localStorage if you need to re-authenticate
 - Events are created as all-day events on each revision date
-- You can edit or delete events directly from Google Calendar
+
+## Important: Calendar Sync is One-Directional
+
+**⚠️ The app syncs TO Google Calendar, but changes made directly in Google Calendar are NOT reflected back to the app.**
+
+- If you edit or delete an event in Google Calendar, the app will not know about these changes
+- Your schedule in the app will still consider those dates as "synced"
+- If you later click "Unsync", the app will attempt to delete event IDs it has stored (which may already be deleted in Calendar)
+
+### Recommendation
+
+**Treat the synced Google Calendar as read-only.** Make all edits in the app:
+1. Need to change revision dates? Edit the schedule in the app and re-sync
+2. Need to remove dates? Delete the schedule in the app (auto-unsync will remove calendar events)
+3. Need to add new revision dates? Modify the schedule and re-sync
+
+This ensures your app data and Google Calendar stay in sync. Do not manually edit or delete events in Google Calendar once they've been synced by the app.
